@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <title>測驗歷史記錄</title>
+  <style>
+    body {
+      font-family: "Microsoft JhengHei", sans-serif;
+      background-color: #121212;
+      color: white;
+      margin: 0;
+      padding: 0 16px 100px;
+    }
+    h1 {
+      text-align: center;
+      padding: 24px 0;
+    }
+    .filter-bar {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    details {
+      background-color: #1e1e1e;
+      border-radius: 10px;
+      margin-bottom: 24px;
+      padding: 0 20px 20px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    }
+    summary {
+      padding: 20px 0;
+      cursor: pointer;
+      font-size: 18px;
+      font-weight: bold;
+      outline: none;
+    }
+    .attempt-block {
+      margin-bottom: 24px;
+      border-top: 1px solid #444;
+      padding-top: 12px;
+    }
+    .question-block {
+      background-color: #2a2a2a;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .question-title {
+      font-size: 16px;
+      margin-bottom: 12px;
+    }
+    .option {
+      padding: 10px 14px;
+      border-radius: 6px;
+      margin: 6px 0;
+      background-color: #444;
+      color: white;
+    }
+    .correct-answer {
+      background-color: #28a745;
+    }
+    .incorrect-answer {
+      background-color: #dc3545;
+    }
+    .explanation {
+      margin-top: 8px;
+      font-size: 14px;
+      color: #ccc;
+    }
+  </style>
+</head>
+<body>
+  <h1>📜 測驗歷史記錄</h1>
+
+  <div class="filter-bar">
+    <label><input type="checkbox" id="onlyWrong"> 只看錯題</label>
+  </div>
+
+  <div style="text-align: center; margin-bottom: 20px;">
+    <button onclick="window.location.href='index.html'" style="padding: 8px 16px; font-size: 16px; border: none; border-radius: 8px; background-color: #007bff; color: white; cursor: pointer;">
+      ⬅️ 回首頁
+    </button>
+  </div>
+
+  <div id="historyContainer"></div>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      const userId = 123;
+      const onlyWrongCheckbox = document.getElementById("onlyWrong");
+      const container = document.getElementById("historyContainer");
+
+      fetch(`/videotest/api/quizHistoryDetail?userId=${userId}`)
+        .then(res => res.json())
+        .then(data => {
+          if (!Array.isArray(data) || data.length === 0) {
+            container.innerHTML = '<p>⚠️ 尚無任何測驗紀錄。</p>';
+            return;
+          }
+
+          render(data);
+          onlyWrongCheckbox.addEventListener("change", () => render(data));
+
+          function render(data) {
+            container.innerHTML = "";
+
+            const grouped = {};
+            data.forEach(record => {
+              if (!grouped[record.videoId]) {
+                grouped[record.videoId] = {
+                  title: record.videoTitle,
+                  attempts: []
+                };
+              }
+              grouped[record.videoId].attempts.push(record);
+            });
+
+            Object.values(grouped).forEach(group => {
+              group.attempts.sort((a, b) => new Date(a.submittedAt) - new Date(b.submittedAt));
+            });
+
+            Object.entries(grouped).forEach(([videoId, group], groupIndex) => {
+              const detailEl = document.createElement("details");
+              if (groupIndex === 0) detailEl.setAttribute("open", "true");
+
+              const summaryEl = document.createElement("summary");
+              summaryEl.textContent = `🎨 ${group.title}`;
+              detailEl.appendChild(summaryEl);
+
+              group.attempts.forEach((record, index) => {
+                const percent = Math.round((record.correct / record.total) * 100);
+                const attemptBlock = document.createElement("div");
+                attemptBlock.className = "attempt-block";
+
+                const header = document.createElement("div");
+                header.style.margin = "12px 0 6px";
+                header.style.fontWeight = "bold";
+                header.textContent = `📅 測驗第 ${index + 1} 次（${record.submittedAt}）｜題數：${record.total}　答對：${record.correct}　正確率：${percent}%`;
+                attemptBlock.appendChild(header);
+
+                record.answers.forEach((ans, i) => {
+                  const isCorrect = ans.correctIndex === ans.selectedIndex;
+                  if (onlyWrongCheckbox.checked && isCorrect) return;
+
+                  const questionBlock = document.createElement("div");
+                  questionBlock.className = "question-block";
+
+                  const qTitle = document.createElement("div");
+                  qTitle.className = "question-title";
+                  qTitle.textContent = `${isCorrect ? "⭕" : "❌"} 第 ${i + 1} 題：${ans.question}`;
+                  questionBlock.appendChild(qTitle);
+
+                  const options = [ans.option1, ans.option2, ans.option3, ans.option4];
+                  options.forEach((opt, idx) => {
+                    const optDiv = document.createElement("div");
+                    optDiv.className = "option";
+
+                    const isThisCorrect = idx === ans.correctIndex;
+                    const isThisSelected = idx === ans.selectedIndex;
+
+                    if (isThisCorrect && isThisSelected) {
+                      optDiv.classList.add("correct-answer");
+                    } else if (isThisSelected && !isThisCorrect) {
+                      optDiv.classList.add("incorrect-answer");
+                    } else if (isThisCorrect) {
+                      optDiv.classList.add("correct-answer");
+                    }
+
+                    optDiv.textContent = `${String.fromCharCode(65 + idx)}. ${opt}`;
+                    questionBlock.appendChild(optDiv);
+                  });
+
+                  if (ans.explanation) {
+                    const explanation = document.createElement("div");
+                    explanation.className = "explanation";
+                    explanation.textContent = `📘 解析：${ans.explanation}`;
+                    questionBlock.appendChild(explanation);
+                  }
+
+                  attemptBlock.appendChild(questionBlock);
+                });
+
+                detailEl.appendChild(attemptBlock);
+              });
+
+              container.appendChild(detailEl);
+            });
+          }
+        })
+        .catch(err => {
+          console.error(err);
+          container.innerHTML = '<p style="color:red;">❌ 載入失敗，請稍後再試。</p>';
+        });
+    });
+  </script>
+</body>
+</html>

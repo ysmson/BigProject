@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <title>影音學習平台首頁</title>
+  <script src="https://www.youtube.com/iframe_api"></script>
+  <style>
+    body {
+      margin: 0;
+      background-color: #0d0d0d;
+      font-family: "Microsoft JhengHei", sans-serif;
+      padding-top: 72px;
+      padding-bottom: 48px;
+    }
+    .navbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 999;
+      background-color: #fff;
+      color: #000;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 20px 32px;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+    }
+    .logo {
+      font-size: 24px;
+      font-weight: bold;
+    }
+    .navbar nav a {
+      color: #000;
+      margin-left: 24px;
+      text-decoration: none;
+      font-size: 16px;
+    }
+    .card {
+      background-color: white;
+      color: black;
+      max-width: 640px;
+      margin: 60px auto;
+      padding: 32px;
+      border-radius: 6px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+      text-align: center;
+    }
+    #videoSelect {
+      width: 100%;
+      max-width: 360px;
+      padding: 6px 10px;
+      font-size: 15px;
+      box-sizing: border-box;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    #player {
+      display: none;
+      width: 560px;
+      height: 315px;
+      background-color: #000;
+      margin: 24px auto 0 auto;
+    }
+    button {
+      padding: 10px 24px;
+      background-color: #000;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 16px;
+      cursor: pointer;
+      transition: background 0.3s;
+      margin: 12px 8px 0 8px;
+    }
+    button:hover {
+      background-color: #333;
+    }
+    footer {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background-color: #fff;
+      color: #000;
+      text-align: center;
+      padding: 12px;
+      font-size: 14px;
+      box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.15);
+      z-index: 999;
+    }
+  </style>
+</head>
+<body>
+
+  <header class="navbar">
+    <div class="logo">Logo</div>
+    <nav>
+      <a href="#">測驗中心</a>
+      <a href="#">商城</a>
+      <a href="#">經驗值</a>
+      <a href="#">我的資料</a>
+      <a href="#">設定</a>
+    </nav>
+  </header>
+
+  <main class="card">
+    <p id="expText" style="font-weight: bold;">目前經驗值：0</p>
+    <h4 style="background-color: #fff8c6;">經驗值增加方式: 每觀看影片十秒增加 1 經驗值</h4>
+
+    <div>
+      <label for="videoSelect">請選擇影片：</label><br>
+      <select id="videoSelect"></select>
+    </div>
+
+    <div id="player"></div>
+
+    <p>📖 請觀賞影片後，點擊下方按鈕進入題目設定</p>
+    <button id="goToQuizSettingBtn">前往題目設定</button>
+    <button onclick="sendExp('watch', 5)">🖋 手動送出經驗值</button>
+    <button id="historyBtn">查看歷史紀錄</button>
+  </main>
+
+  <footer>客服信箱</footer>
+
+  <script>
+    const userId = 123;
+    const contextPath = "/videotest";
+
+    let player;
+    let videoList = [];
+    let watchSeconds = 0;
+    let lastReportedTime = 0;
+    let trackingInterval = null;
+    let playerReady = false;
+
+    const videoSelect = document.getElementById("videoSelect");
+
+    document.getElementById("historyBtn").addEventListener("click", () => {
+    	  window.location.href = `quizhistory.html?userId=${userId}`;
+    	});
+
+
+    function loadExp() {
+      fetch(`${contextPath}/api/getExp?userId=${userId}`)
+        .then(res => res.json())
+        .then(data => {
+          document.getElementById("expText").textContent = `目前經驗值：${data.exp}`;
+        });
+    }
+
+    function sendExp(type, amount) {
+      fetch(`${contextPath}/api/exp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, source: type, exp: amount })
+      })
+        .then(() => loadExp());
+    }
+
+    function onPlayerStateChange(event) {
+      if (event.data === YT.PlayerState.PLAYING) {
+        clearInterval(trackingInterval);
+        trackingInterval = setInterval(() => {
+          const currentTime = Math.floor(player.getCurrentTime());
+          if (currentTime > lastReportedTime) {
+            watchSeconds += currentTime - lastReportedTime;
+            lastReportedTime = currentTime;
+            if (watchSeconds >= 10) {
+              sendExp("watch", 1);
+              watchSeconds = 0;
+            }
+          }
+        }, 1000);
+      } else {
+        clearInterval(trackingInterval);
+      }
+    }
+
+    function createPlayer(videoId) {
+      player = new YT.Player('player', {
+        height: '315',
+        width: '560',
+        videoId: videoId,
+        events: {
+          onReady: () => {
+            playerReady = true;
+            document.getElementById("player").style.display = "block";
+            player.playVideo();
+          },
+          onStateChange: onPlayerStateChange
+        }
+      });
+    }
+
+    window.onYouTubeIframeAPIReady = function () {
+      if (window._pendingVideoId) {
+        createPlayer(window._pendingVideoId);
+        window._pendingVideoId = null;
+      }
+    };
+
+    fetch(`${contextPath}/api/videoList`)
+      .then(res => res.json())
+      .then(data => {
+        if (!data || data.length === 0) {
+          alert("⚠️ 尚無影片");
+          return;
+        }
+
+        videoList = data;
+        const lastWatched = localStorage.getItem("lastWatchedVideoId");
+        const defaultVideoId = data.find(v => v.videoId === lastWatched)?.videoId || data[0].videoId;
+
+        data.forEach((video, i) => {
+          const opt = document.createElement("option");
+          opt.value = video.videoId;
+          opt.textContent = `#${i + 1} ${video.title.replace(/^#\d+\s*/, '')}`;
+          videoSelect.appendChild(opt);
+        });
+
+        videoSelect.value = defaultVideoId;
+
+        if (typeof YT !== "undefined" && YT.Player) {
+          createPlayer(defaultVideoId);
+        } else {
+          window._pendingVideoId = defaultVideoId;
+        }
+      });
+
+    videoSelect.addEventListener("change", () => {
+      const selected = videoSelect.value;
+      localStorage.setItem("lastWatchedVideoId", selected);
+      if (player && typeof player.loadVideoById === "function") {
+        player.loadVideoById(selected);
+        watchSeconds = 0;
+        lastReportedTime = 0;
+      }
+    });
+
+    document.getElementById("goToQuizSettingBtn").onclick = () => {
+      const selectedVideoId = videoSelect.value;
+      window.location.href = `${contextPath}/quizSetting?videoId=${selectedVideoId}`;
+    };
+
+    window.addEventListener("load", () => {
+      loadExp();
+    });
+  </script>
+</body>
+</html>

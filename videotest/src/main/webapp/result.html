@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <title>測驗結果</title>
+  <style>
+    body {
+      margin: 0;
+      background-color: #0d0d0d;
+      font-family: "Microsoft JhengHei", sans-serif;
+      padding-top: 72px;
+      padding-bottom: 48px;
+      color: white;
+    }
+    .result-summary {
+      background-color: #222;
+      padding: 24px;
+      margin: 80px auto 24px auto;
+      max-width: 720px;
+      border-radius: 8px;
+      text-align: center;
+    }
+    .button-group {
+      margin-top: 16px;
+    }
+    button {
+      padding: 10px 24px;
+      background-color: #000;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 16px;
+      cursor: pointer;
+      margin: 0 8px;
+      transition: background 0.3s;
+    }
+    button:hover {
+      background-color: #333;
+    }
+    .quiz-result {
+      background-color: #1e1e1e;
+      padding: 20px;
+      margin: 16px auto;
+      max-width: 720px;
+      border-radius: 8px;
+    }
+    .quiz-result ul {
+      list-style-type: none;
+      padding-left: 0;
+    }
+    .quiz-result li {
+      margin: 6px 0;
+      padding: 6px 10px;
+      border-radius: 4px;
+    }
+    .correct-option {
+      background-color: #2ecc71;
+      color: white;
+      font-weight: bold;
+    }
+    .wrong-option {
+      background-color: #e74c3c;
+      color: white;
+    }
+    .normal-option {
+      background-color: #444;
+      color: #ccc;
+    }
+    footer {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background-color: #fff;
+      color: #000;
+      text-align: center;
+      padding: 12px;
+      font-size: 14px;
+      box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.15);
+      z-index: 999;
+    }
+    .section-title {
+      text-align: center;
+      margin-top: 32px;
+      margin-bottom: 16px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="result-summary">
+    <h2>📊 測驗結果</h2>
+    <p>🎮 影片 ID：<span id="video-id"></span></p>
+    <p>👤 使用者 ID：<span id="user-id"></span></p>
+    <p>📚 題目來源：<span id="source"></span></p>
+    <p>📝 作答題數：<span id="total"></span></p>
+    <p>✅ 答對題數：<span id="correct"></span></p>
+    <p>📉 正確率：<span id="accuracy"></span></p>
+    <div class="button-group">
+      <button onclick="location.href='index.html'">🏠 回首頁</button>
+      <button id="backToHistory">📖 返回紀錄</button>
+    </div>
+  </div>
+
+  <div id="gptContainer"></div>
+  <div id="localContainer"></div>
+
+  <footer>客服信箱</footer>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      const contextPath = "/videotest";
+      const params = new URLSearchParams(location.search);
+      const videoId = params.get("videoId");
+      const userId = parseInt(params.get("userId"));
+      const source = params.get("source");
+
+      document.getElementById("video-id").textContent = videoId;
+      document.getElementById("user-id").textContent = userId;
+      document.getElementById("source").textContent =
+        source === "gpt" ? "GPT 題目" :
+        source === "local" ? "本地題目" : "全部來源";
+
+      document.getElementById("backToHistory").onclick = () => {
+        location.href = `quizhistory.html?userId=${userId}`;
+      };
+
+      function normalize(str) {
+        return (str || "").replace(/[\s\p{P}\p{S}（）]+/gu, "").toLowerCase();
+      }
+
+      function getIndexes(item) {
+        const options = [item.option1, item.option2, item.option3, item.option4];
+        let userIndex = parseInt(item.selectedIndex ?? item.selected_option);
+        if (isNaN(userIndex)) {
+          const sel = (item.selected_option || "").toUpperCase();
+          if (["A", "B", "C", "D"].includes(sel)) {
+            userIndex = sel.charCodeAt(0) - 65;
+          } else {
+            const match = options.findIndex(opt => normalize(opt) === normalize(item.selected_option));
+            if (match !== -1) userIndex = match;
+          }
+        }
+        let correctIndex = parseInt(item.correctIndex ?? item.correct_index);
+        if (isNaN(correctIndex) || correctIndex < 0 || correctIndex > 3) {
+          const match = options.findIndex(opt => normalize(opt) === normalize(item.answer));
+          if (match !== -1) correctIndex = match;
+        }
+        const isValid = userIndex >= 0 && correctIndex >= 0 && userIndex < 4 && correctIndex < 4;
+        const isCorrect = isValid && userIndex === correctIndex;
+        return { userIndex, correctIndex, options, isCorrect };
+      }
+
+      fetch(`${contextPath}/api/answerDetail?videoId=${videoId}&userId=${userId}`)
+        .then(res => res.json())
+        .then(data => {
+          let total = 0, correct = 0;
+
+          data.forEach(item => {
+            const { userIndex, correctIndex, isCorrect } = getIndexes(item);
+            if (userIndex >= 0 && correctIndex >= 0) {
+              total++;
+              if (isCorrect) correct++;
+            }
+          });
+
+          document.getElementById("total").textContent = total;
+          document.getElementById("correct").textContent = correct;
+          document.getElementById("accuracy").textContent =
+            total > 0 ? `${((correct / total) * 100).toFixed(1)}%` : "N/A";
+
+          ["gpt", "local"].forEach(type => {
+            const label = type === "gpt" ? "🤖 GPT 題目" : "📘 本地題目";
+            const container = type === "gpt" ? document.getElementById("gptContainer") : document.getElementById("localContainer");
+            const filtered = data.filter(item => (item.source || "").toLowerCase() === type);
+            if (!source || source === type) {
+              renderQuestions(filtered, container, label);
+            }
+          });
+        });
+
+      function renderQuestions(questions, container, titleText) {
+        if (questions.length === 0) return;
+        const title = document.createElement("h2");
+        title.className = "section-title";
+        title.textContent = titleText;
+        container.appendChild(title);
+
+        questions.forEach((item, index) => {
+          const { userIndex, correctIndex, options, isCorrect } = getIndexes(item);
+          const icon = isCorrect ? "⭕" : "❌";
+
+          const div = document.createElement("div");
+          div.className = "quiz-result";
+          div.innerHTML = `<h3>${index + 1}. ${icon}</h3><p><b>${item.question}</b></p>`;
+
+          const ul = document.createElement("ul");
+          options.forEach((opt, i) => {
+            const li = document.createElement("li");
+            li.textContent = `${String.fromCharCode(65 + i)}. ${opt}`;
+            if (i === correctIndex) {
+              li.className = "correct-option";
+            } else if (i === userIndex && !isCorrect) {
+              li.className = "wrong-option";
+            } else {
+              li.className = "normal-option";
+            }
+            ul.appendChild(li);
+          });
+
+          div.appendChild(ul);
+
+          const explanation = document.createElement("p");
+          explanation.innerHTML = `<em>📝 詳解：</em> ${item.explanation || "無提供"}`;
+          div.appendChild(explanation);
+
+          container.appendChild(div);
+        });
+      }
+    });
+  </script>
+</body>
+</html>
